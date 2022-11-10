@@ -1,0 +1,56 @@
+name: Basic Docker Build
+
+on:
+  # push:
+  #   branches:
+  #     - test
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+jobs:
+  build-image:
+    runs-on:
+      - ubuntu-22.04
+
+    permissions:
+      actions: read
+      contents: read # for checkout the code
+      security-events: write # upload the security results
+      pull-requests: write # create comments in PR
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          # ref: ${{ github.event.pull_request.head.ref }}
+          # token: ${{ secrets.RETEST }}
+
+      - name: Build Dockerfile to Image and export
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          push: false
+          tags: ${{ github.run_id }}
+          # target: test # set the target stage to test for testing and scanning purpose
+
+      - name: Scan docker images for all CVEs and report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ github.run_id }}
+          exit-code: 1
+          ignore-unfixed: true # don't warn about anything that hasn't been fixed
+          vuln-type: 'os,library'
+          severity: 'HIGH,CRITICAL'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload scanning result # can only proceed from innersource
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          # token: ${{ secrets.RETEST }}
